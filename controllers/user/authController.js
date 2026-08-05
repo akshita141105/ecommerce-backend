@@ -10,7 +10,7 @@ const isProd = process.env.NODE_ENV === "production";
 const cookieOptions = {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? "strict" : "lax",
+    sameSite: isProd ? "none" : "lax",
 };
 
 export const signup = async (req, res) => {
