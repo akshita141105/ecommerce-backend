@@ -92,6 +92,7 @@ const allowedOrigins = [
     "http://localhost:3001",
     "https://ecommerce - frontend - j1h6wkgsk - akshita - frontend - project.vercel.app",
     "ecommerce-frontend-snowy-iota.vercel.app",
+    "https://ecommerce-frontend-snowy-iota.vercel.app/",
 ].filter(Boolean);
 
 const corsOptions = {
