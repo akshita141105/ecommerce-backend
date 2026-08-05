@@ -205,3 +205,8 @@ logger.info("Cron: releaseExpiredCartStock registered (every 5 min)");
 registerStockMonitorCron();
 registerReconcilePendingCron();
 
+app.get("/", (req, res) => {
+    res.send("API is running ✅");
+});
+
+app.listen(8000, () => console.log("Server running on port 8000"));
