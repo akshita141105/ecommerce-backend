@@ -4,7 +4,7 @@
 import express from "express";
 import {
     createsubcategory, updatesubcategory, deletesubcategory, updateSizeChart, 
-} from "../../controllers/admin/adminSubcategoryController.js";
+} from "../../controllers/admin/adminsubcategoryController.js";
 import {
     getAllSubcategories, getsinglesubcategory,
 } from "../../controllers/user/subcategoryController.js";
