@@ -91,6 +91,7 @@ const allowedOrigins = [
     "http://localhost:3000",
     "http://localhost:3001",
     "https://ecommerce-frontend-snowy-iota.vercel.app",
+    "https://ecommerce-admin-panel-lime.vercel.app",
 ].filter(Boolean);
 
 const corsOptions = {
