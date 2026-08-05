@@ -9,8 +9,8 @@ import { notifyAdmin } from "./notifyAdmin.js";
 import { clearProductCache } from "../services/productHelpers.js";
 
 const connection = {
-    host: process.env.REDIS_HOST || "localhost",
-    port: process.env.REDIS_PORT || 6379,
+    url: process.env.REDIS_URL,
+    maxRetriesPerRequest: null, // BullMQ ke liye required hai
 };
 
 const CHUNK_SIZE = 25;

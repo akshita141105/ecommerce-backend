@@ -11,8 +11,8 @@ import client from "../lib/redis.js";
 import { notifyAdmin } from "../utils/notifyAdmin.js";
 
 const connection = {
-    host: process.env.REDIS_HOST || "localhost",
-    port: process.env.REDIS_PORT || 6379,
+    url: process.env.REDIS_URL,
+    maxRetriesPerRequest: null, // BullMQ ke liye required hai
 };
 
 const CHUNK_SIZE = 25;
