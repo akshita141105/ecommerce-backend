@@ -13,12 +13,6 @@ const connection = {
     port: process.env.REDIS_PORT || 6379,
 };
 
-console.log("ENV CHECK →", {
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    user: process.env.SMTP_USER,
-    from: process.env.SMTP_FROM_EMAIL,
-});
 
 
 

@@ -1,5 +1,5 @@
 // controllers/lookbookController.js
-import Lookbook from "../../models/Lookbook.js";
+import Lookbook from "../../models/LookBook.js"
 import Product from "../../models/Product.js";
 import client from "../../lib/redis.js";
 
