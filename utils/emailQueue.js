@@ -1,8 +1,7 @@
 import { Queue, Worker } from "bullmq";
-import nodemailer from "nodemailer";
 import logger from "./logger.js";
 import { notifyAdmin } from "./notifyAdmin.js";
-import FailedEmail from "../models/FailedEmail.js"; // path adjust karo
+import FailedEmail from "../models/FailedEmail.js";
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -12,26 +11,6 @@ const connection = {
 };
 
 console.log("📦 emailQueue.js loaded | REDIS_URL:", process.env.REDIS_URL);
-
-// ─── Transporter ─────────────────────────────
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
-
-// Transporter verify — confirm karega SMTP connection sahi hai ya nahi, startup pe hi
-transporter.verify((err, success) => {
-    if (err) {
-        console.error("❌ SMTP transporter verify FAILED:", err.message);
-    } else {
-        console.log("✅ SMTP transporter verified, ready to send emails");
-    }
-});
 
 // ─── Queue ────────────────────────────────────
 export const emailQueue = new Queue("emailQueue", {
@@ -59,25 +38,39 @@ export const emailWorker = new Worker(
 
         const { to, subject, html } = job.data;
 
-        console.log("📧 SMTP CONFIG AT SEND TIME:", {
-            host: process.env.SMTP_HOST,
-            port: process.env.SMTP_PORT,
-            user: process.env.SMTP_USER,
-            from: process.env.SMTP_FROM_EMAIL,
-        });
-
         try {
-            const info = await transporter.sendMail({
-                from: `"DRAPE" <${process.env.SMTP_FROM_EMAIL}>`,
-                to,
-                subject,
-                html,
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 sec timeout
+
+            const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+                method: "POST",
+                headers: {
+                    "api-key": process.env.BREVO_API_KEY,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sender: { email: process.env.SMTP_FROM_EMAIL, name: "DRAPE" },
+                    to: [{ email: to }],
+                    subject,
+                    htmlContent: html,
+                }),
+                signal: controller.signal,
             });
-            console.log("✅ transporter.sendMail SUCCESS:", info.response);
+
+            clearTimeout(timeoutId);
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error("❌ Brevo API ERROR:", data);
+                throw new Error(data.message || `Brevo API failed with status ${response.status}`);
+            }
+
+            console.log("✅ Brevo API SUCCESS:", data);
             logger.info(`Email sent: ${subject} → ${to}`);
         } catch (sendErr) {
-            console.error("❌ transporter.sendMail THREW ERROR:", sendErr.message);
-            throw sendErr; // rethrow so BullMQ still marks the job failed/retries
+            console.error("❌ Email send FAILED:", sendErr.message);
+            throw sendErr;
         }
     },
     {
@@ -90,7 +83,6 @@ emailWorker.on("error", (err) => {
     console.error("❌ emailWorker Redis connection error:", err.message);
 });
 
-// ─── Worker events ────────────────────────────
 emailWorker.on("completed", (job) => {
     console.log(`🎉 Email job completed: ${job.id}`);
     logger.info(`Email job completed: ${job.id}`);
@@ -103,8 +95,6 @@ emailWorker.on("failed", (job, err) => {
     const isFinalAttempt = job.attemptsMade >= (job.opts.attempts || 1);
 
     if (isFinalAttempt) {
-        console.error(`🚨 FINAL ATTEMPT FAILED for job ${job.id}, notifying admin + saving FailedEmail`);
-
         notifyAdmin({
             type: "EMAIL_FAILED",
             severity: "high",
