@@ -8,6 +8,25 @@ import logger from "../utils/logger.js";
 
 const EXPIRY_MINUTES = 20;
 
+// ── Chhota retry helper — transient/write-conflict errors ke liye ──
+const isTransientError = (err) =>
+    err?.errorLabels?.includes("TransientTransactionError") || err?.code === 112;
+
+const withRetry = async (fn, maxAttempts = 3) => {
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastErr = err;
+            if (!isTransientError(err) || attempt === maxAttempts) throw err;
+            // chhota exponential backoff
+            await new Promise((r) => setTimeout(r, 50 * attempt));
+        }
+    }
+    throw lastErr;
+};
+
 export const expireStalePendingOrders = async () => {
     const cutoff = new Date(Date.now() - EXPIRY_MINUTES * 60 * 1000);
 
@@ -26,57 +45,58 @@ export const expireStalePendingOrders = async () => {
 
     for (const order of staleOrders) {
         const session = await mongoose.startSession();
-        session.startTransaction();
         try {
-            for (const item of order.items ?? []) {
-                await releaseStock(
-                    {
-                        productId: item.product,
-                        color: item.selectedColor,
-                        size: item.selectedSize,
-                        quantity: item.quantity,
-                    },
-                    session
-                );
-            }
+            await withRetry(() =>
+                session.withTransaction(async () => {
+                    for (const item of order.items ?? []) {
+                        await releaseStock(
+                            {
+                                productId: item.product,
+                                color: item.selectedColor,
+                                size: item.selectedSize,
+                                quantity: item.quantity,
+                            },
+                            session
+                        );
+                    }
 
-            if (order.walletUsed > 0) {
-                const user = await User.findById(order.user).session(session);
-                if (user) {
-                    user.walletBalance = (user.walletBalance || 0) + order.walletUsed;
-                    user.walletReserved = Math.max(0, (user.walletReserved || 0) - order.walletUsed);
-                    await user.save({ session });
+                    if (order.walletUsed > 0) {
+                        const user = await User.findById(order.user).session(session);
+                        if (user) {
+                            user.walletBalance = (user.walletBalance || 0) + order.walletUsed;
+                            user.walletReserved = Math.max(0, (user.walletReserved || 0) - order.walletUsed);
+                            await user.save({ session });
 
-                    await WalletTransaction.create(
-                        [{
-                            user: order.user,
-                            type: "credit",
-                            amount: order.walletUsed,
-                            balanceAfter: user.walletBalance,
-                            reason: "wallet_release",
-                            description: `Released — Order #${order._id.toString().slice(-8).toUpperCase()} expired`,
-                            orderId: order._id,
-                        }],
+                            await WalletTransaction.create(
+                                [{
+                                    user: order.user,
+                                    type: "credit",
+                                    amount: order.walletUsed,
+                                    balanceAfter: user.walletBalance,
+                                    reason: "wallet_release",
+                                    description: `Released — Order #${order._id.toString().slice(-8).toUpperCase()} expired`,
+                                    orderId: order._id,
+                                }],
+                                { session }
+                            );
+                        }
+                    }
+
+                    await Order.findByIdAndUpdate(
+                        order._id,
+                        { $set: { paymentStatus: "expired", stockReleased: true } },
                         { session }
                     );
-                }
-            }
-
-            await Order.findByIdAndUpdate(
-                order._id,
-                { $set: { paymentStatus: "expired", stockReleased: true } },
-                { session }
+                })
             );
 
-            await session.commitTransaction();
             expiredCount++;
             logger.info(`Order expired: ${order._id} | items released: ${order.items?.length ?? 0}`);
         } catch (err) {
-            await session.abortTransaction();
             failedCount++;
             logger.error(`Failed to expire order ${order._id}:`, err);
         } finally {
-            session.endSession();
+            await session.endSession();
         }
     }
 
