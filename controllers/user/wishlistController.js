@@ -93,7 +93,9 @@ export const addToWishlist = async (req, res, next) => {
       });
     } catch (err) {
       if (err.code === 11000) {
-        return res.status(200).json({ message: "Already in wishlist" });
+        // ✅ FIX: wishlist key ab response mein bhi jaa raha hai
+        const wishlist = await buildWishlistWithOffer(req.user._id.toString());
+        return res.status(200).json({ message: "Already in wishlist", wishlist });
       }
       throw err;
     }
@@ -128,7 +130,9 @@ export const removeFromWishlist = async (req, res, next) => {
     });
 
     if (result.deletedCount === 0) {
-      return res.status(200).json({ message: "Product not in wishlist" });
+      // ✅ FIX: wishlist key ab response mein bhi jaa raha hai
+      const wishlist = await buildWishlistWithOffer(req.user._id.toString());
+      return res.status(200).json({ message: "Product not in wishlist", wishlist });
     }
 
     // ── Refresh cache ──
