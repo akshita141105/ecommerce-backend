@@ -118,37 +118,42 @@ export const updateContactMessageStatus = async (req, res, next) => {
             return res.status(400).json({ message: "Resolution note is required to mark as resolved" });
         }
 
-        const existing = await ContactMessage.findById(id);
-
-        if (!existing) {
-            return res.status(404).json({ message: "Message not found" });
-        }
-
-        // Status same hai to email mat bhejo — no-op
-        if (existing.status === status) {
-            return res.status(200).json({
-                message: "Status updated successfully",
-                data: existing,
-            });
-        }
-
-        existing.status = status;
+        const updateFields = { status };
         if (status === "resolved") {
-            existing.resolutionNote = resolutionNote.trim();
+            updateFields.resolutionNote = resolutionNote.trim();
         }
-        await existing.save();
+
+        // ── atomic: sirf tabhi update karega jab status abhi bhi purana hai ──
+        // ── new: false → purana document return karta hai, taaki pata chale actual old status kya tha ──
+        const previous = await ContactMessage.findOneAndUpdate(
+            { _id: id, status: { $ne: status } },  // status same hai toh match hi nahi karega
+            { $set: updateFields },
+            { new: false }
+        );
+
+        // ── previous null ho sakta hai do reasons se: doc exist nahi karta, YA status already same tha ──
+        if (!previous) {
+            const doc = await ContactMessage.findById(id).lean();
+            if (!doc) {
+                return res.status(404).json({ message: "Message not found" });
+            }
+            // status already same tha — no-op
+            return res.status(200).json({ message: "Status updated successfully", data: doc });
+        }
+
+        const updated = { ...previous.toObject(), ...updateFields };
 
         const copy = STATUS_EMAIL_COPY[status];
         if (copy) {
-            const noteHtml = status === "resolved" && existing.resolutionNote
+            const noteHtml = status === "resolved" && updated.resolutionNote
                 ? `<p style="font-size:13px;color:#555;margin:8px 0 0;padding:10px 12px;background:#fff;border:1px solid #eee;border-radius:6px;">
-                       <strong>Resolution note:</strong> ${existing.resolutionNote}
+                       <strong>Resolution note:</strong> ${updated.resolutionNote}
                    </p>`
                 : "";
 
             try {
                 await sendEmail(
-                    existing.email,
+                    updated.email,
                     copy.subject,
                     `
                     <div style="font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;">
@@ -156,23 +161,21 @@ export const updateContactMessageStatus = async (req, res, next) => {
                         <p style="font-size:11px;font-weight:700;text-transform:uppercase;color:#b8860b;margin:0 0 6px;">
                           DRAPE Support
                         </p>
-                        <p style="font-size:14px;color:#555;margin:0 0 4px;">Hi ${existing.name},</p>
+                        <p style="font-size:14px;color:#555;margin:0 0 4px;">Hi ${updated.name},</p>
                         <p style="font-size:14px;color:#555;margin:0 0 12px;">${copy.body}</p>
                         ${noteHtml}
-                        <p style="font-size:12px;color:#888;margin:12px 0 0;">Regarding: <strong>${existing.subject}</strong></p>
+                        <p style="font-size:12px;color:#888;margin:12px 0 0;">Regarding: <strong>${updated.subject}</strong></p>
                       </div>
                     </div>`
                 );
             } catch (emailErr) {
                 logger.error("Failed to send contact status email:", emailErr);
-                // TODO: this is where the 3-attempt-failure → notifyAdmin hook goes
-                // once sendEmail is wired through the BullMQ retry queue.
             }
         }
 
         res.status(200).json({
             message: "Status updated successfully",
-            data: existing,
+            data: updated,
         });
     } catch (err) {
         logger.error("updateContactMessageStatus failed:", err);

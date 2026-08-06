@@ -140,12 +140,22 @@ export const createPaymentOrder = async (req, res, next) => {
             // ✅ Stale order — release any wallet amount reserved for it
             // (this is what prevents "wallet gone, order never completed")
             if (existingOrder.walletUsed > 0) {
-                user = await User.findById(userId).session(session);
-                if (user) {
-                    user.walletBalance = (user.walletBalance || 0) + existingOrder.walletUsed;
-                    user.walletReserved = Math.max(0, (user.walletReserved || 0) - existingOrder.walletUsed);
-                    await user.save({ session });
+                user = await User.findOneAndUpdate(
+                    { _id: userId },
+                    [
+                        {
+                            $set: {
+                                walletBalance: { $add: [{ $ifNull: ["$walletBalance", 0] }, existingOrder.walletUsed] },
+                                walletReserved: {
+                                    $max: [0, { $subtract: [{ $ifNull: ["$walletReserved", 0] }, existingOrder.walletUsed] }],
+                                },
+                            },
+                        },
+                    ],
+                    { session, new: true }
+                );
 
+                if (user) {
                     await WalletTransaction.create(
                         [{
                             user: userId,
@@ -188,14 +198,13 @@ export const createPaymentOrder = async (req, res, next) => {
                         throw releaseErr;
                     }
                 }
-                existingOrder.stockReleased = true; // idempotency guard
             }
 
-            existingOrder.paymentStatus = "expired";
-            await existingOrder.save({ session });
-            // Note: Razorpay Orders API has no cancel endpoint — marking it
-            // expired locally is sufficient since we never honor a stale
-            // razorpayOrderId again once this happens.
+            await Order.findByIdAndUpdate(
+                existingOrder._id,
+                { $set: { stockReleased: true, paymentStatus: "expired" } },
+                { session }
+            );
         }
 
         // ✅ IDEMPOTENCY CHECK 2: client-generated key se duplicate detect karo
@@ -238,8 +247,11 @@ export const createPaymentOrder = async (req, res, next) => {
         // no reservation window, no race.
         // ─────────────────────────────────────────
         if (walletToUse > 0 && amountDue <= 0) {
-            user.walletBalance = (user.walletBalance || 0) - walletToUse;
-            await user.save({ session });
+            user = await User.findByIdAndUpdate(
+                userId,
+                { $inc: { walletBalance: -walletToUse } },
+                { session, new: true }
+            );
 
             let order;
             try {
@@ -301,8 +313,8 @@ export const createPaymentOrder = async (req, res, next) => {
                 );
             }
 
-            cart.status = "ordered";
-            await cart.save({ session });
+            await Cart.findByIdAndUpdate(cart._id, { $set: { status: "ordered" } }, { session });
+
             await CartItem.deleteMany({ cart: cart._id }).session(session);
 
             await session.commitTransaction();
@@ -332,9 +344,11 @@ export const createPaymentOrder = async (req, res, next) => {
         // is released back automatically if this order expires.
         // ─────────────────────────────────────────
         if (walletToUse > 0) {
-            user.walletBalance -= walletToUse;
-            user.walletReserved = (user.walletReserved || 0) + walletToUse;
-            await user.save({ session });
+            await User.findByIdAndUpdate(
+                userId,
+                { $inc: { walletBalance: -walletToUse, walletReserved: walletToUse } },
+                { session }
+            );
         }
 
         const orderId = new mongoose.Types.ObjectId();
@@ -544,8 +558,7 @@ export const createCODOrder = async (req, res, next) => {
             { session }
         );
 
-        cart.status = "ordered";
-        await cart.save({ session });
+        await Cart.findByIdAndUpdate(cart._id, { $set: { status: "ordered" } }, { session });
         await CartItem.deleteMany({ cart: cart._id }).session(session);
 
         await session.commitTransaction();

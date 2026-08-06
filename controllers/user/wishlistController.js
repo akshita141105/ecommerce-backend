@@ -1,5 +1,5 @@
 // controllers/user/wishlistController.js
-import User from "../../models/User.js";
+import WishlistItem from "../../models/WishlistItem.js";
 import Product from "../../models/Product.js";
 import client from "../../lib/redis.js";
 import logger from "../../utils/logger.js";
@@ -8,11 +8,10 @@ import { calculateoffer } from "../../services/offer.js";
 const CACHE_TTL = 300; // 5 min
 const cacheKey = (userId) => `wishlist:${userId}`;
 
-// ✅ FIX: "category" Product model ka direct field nahi hai — sirf
-// subcategory ke andar hi nested milta hai. Isliye category ko
-// subcategory ke populate ke andar nest karna zaroori hai.
+// ✅ FIX (still applies): "category" Product model ka direct field nahi hai —
+// sirf subcategory ke andar hi nested milta hai.
 const POPULATE_OPTS = {
-  path: "wishlist.productId",
+  path: "productId",
   select: "name price description offer offerStart offerEnd colors subcategory slug",
   populate: {
     path: "subcategory",
@@ -21,15 +20,21 @@ const POPULATE_OPTS = {
   },
 };
 
-// ─── Helper: update cache after any mutation ──
-const refreshCache = async (userId) => {
-  const user = await User.findById(userId).populate(POPULATE_OPTS).lean();
-  const wishlistWithOffer = user.wishlist.map((item) => ({
+// ─── Helper: fetch + shape wishlist with offer calc ──
+const buildWishlistWithOffer = async (userId) => {
+  const items = await WishlistItem.find({ userId }).populate(POPULATE_OPTS).lean();
+
+  return items.map((item) => ({
     ...item,
     productId: item.productId
       ? { ...item.productId, ...calculateoffer(item.productId) }
       : item.productId,
   }));
+};
+
+// ─── Helper: update cache after any mutation ──
+const refreshCache = async (userId) => {
+  const wishlistWithOffer = await buildWishlistWithOffer(userId);
   await client.setEx(cacheKey(userId), CACHE_TTL, JSON.stringify(wishlistWithOffer));
   return wishlistWithOffer;
 };
@@ -48,15 +53,7 @@ export const getWishlist = async (req, res, next) => {
       return res.status(200).json({ fromCache: true, wishlist: JSON.parse(cached) });
     }
 
-    const user = await User.findById(userId).populate(POPULATE_OPTS).lean();
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const wishlistWithOffer = user.wishlist.map((item) => ({
-      ...item,
-      productId: item.productId
-        ? { ...item.productId, ...calculateoffer(item.productId) }
-        : item.productId,
-    }));
+    const wishlistWithOffer = await buildWishlistWithOffer(userId);
 
     await client.setEx(cacheKey(userId), CACHE_TTL, JSON.stringify(wishlistWithOffer));
 
@@ -86,20 +83,20 @@ export const addToWishlist = async (req, res, next) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    // ── Idempotent add ──
-    const alreadyExists = user.wishlist.some(
-      (item) => item.productId.toString() === productId && item.color === color
-    );
-
-    if (alreadyExists) {
-      return res.status(200).json({ message: "Already in wishlist" });
+    // ── Idempotent add: unique index (userId, productId, color) DB level pe bhi guard karta hai ──
+    try {
+      await WishlistItem.create({
+        userId: req.user._id,
+        productId,
+        color,
+        addedAt: new Date(),
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(200).json({ message: "Already in wishlist" });
+      }
+      throw err;
     }
-
-    user.wishlist.push({ productId, color, addedAt: new Date() });
-    await user.save();
 
     // ── Refresh cache ──
     const wishlist = await refreshCache(req.user._id.toString());
@@ -124,22 +121,15 @@ export const removeFromWishlist = async (req, res, next) => {
       return res.status(400).json({ message: "Product ID and color required" });
     }
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    const result = await WishlistItem.deleteOne({
+      userId: req.user._id,
+      productId,
+      color,
+    });
 
-    // ── Idempotent remove ──
-    const exists = user.wishlist.some(
-      (item) => item.productId.toString() === productId && item.color === color
-    );
-
-    if (!exists) {
+    if (result.deletedCount === 0) {
       return res.status(200).json({ message: "Product not in wishlist" });
     }
-
-    user.wishlist = user.wishlist.filter(
-      (item) => !(item.productId.toString() === productId && item.color === color)
-    );
-    await user.save();
 
     // ── Refresh cache ──
     const wishlist = await refreshCache(req.user._id.toString());
@@ -157,11 +147,7 @@ export const removeFromWishlist = async (req, res, next) => {
 // ─────────────────────────────────────────────
 export const clearWishlist = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    user.wishlist = [];
-    await user.save();
+    await WishlistItem.deleteMany({ userId: req.user._id });
 
     await client.del(cacheKey(req.user._id.toString()));
 

@@ -3,7 +3,7 @@ import PromoBanner from "../../models/PromoBanner.js";
 import cloudinary from "../../config/cloudinary.js";
 
 // CREATE new banner
-export const createPromoBanner = async (req, res) => {
+export const createPromoBanner = async (req, res, next) => {
     try {
         const { startDate, endDate, linkUrl } = req.body;
 
@@ -34,57 +34,62 @@ export const createPromoBanner = async (req, res) => {
 
         res.status(201).json({ message: "Promo banner created", banner });
     } catch (error) {
-        console.error("Create promo banner error:", error);
+        next(error)
         res.status(500).json({ message: "Server error", error: error.message });
     }
 };
 
 // GET all banners (admin - list/manage)
-export const getAllPromoBanners = async (req, res) => {
+export const getAllPromoBanners = async (req, res, next) => {
     try {
         const banners = await PromoBanner.find().sort({ createdAt: -1 });
         res.status(200).json({ banners });
     } catch (error) {
-        res.status(500).json({ message: "Server error", error: error.message });
+        next(error)
     }
 };
 
 // UPDATE banner (dates/isActive/linkUrl, optionally new image)
-export const updatePromoBanner = async (req, res) => {
+export const updatePromoBanner = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const banner = await PromoBanner.findById(id);
-        if (!banner) return res.status(404).json({ message: "Banner not found" });
+        const existing = await PromoBanner.findById(id).lean();
+        if (!existing) return res.status(404).json({ message: "Banner not found" });
 
         const { startDate, endDate, linkUrl, isActive } = req.body;
+        const updateFields = {};
 
         if (req.file) {
             // purani image cloudinary se delete karo
-            if (banner.imagePublicId) {
-                await cloudinary.uploader.destroy(banner.imagePublicId);
+            if (existing.imagePublicId) {
+                await cloudinary.uploader.destroy(existing.imagePublicId);
             }
-            banner.imageUrl = req.file.path;
-            banner.imagePublicId = req.file.filename;
+            updateFields.imageUrl = req.file.path;
+            updateFields.imagePublicId = req.file.filename;
         }
 
-        if (startDate) banner.startDate = new Date(startDate);
+        if (startDate) updateFields.startDate = new Date(startDate);
         if (endDate) {
             const endDateObj = new Date(endDate);
             endDateObj.setHours(23, 59, 59, 999);
-            banner.endDate = endDateObj;
+            updateFields.endDate = endDateObj;
         }
-        if (linkUrl !== undefined) banner.linkUrl = linkUrl;
-        if (isActive !== undefined) banner.isActive = isActive;
+        if (linkUrl !== undefined) updateFields.linkUrl = linkUrl;
+        if (isActive !== undefined) updateFields.isActive = isActive;
 
-        await banner.save();
+        const banner = await PromoBanner.findByIdAndUpdate(
+            id,
+            { $set: updateFields },
+            { new: true }
+        );
         res.status(200).json({ message: "Banner updated", banner });
     } catch (error) {
-        res.status(500).json({ message: "Server error", error: error.message });
+        next(error);
     }
 };
 
 // DELETE banner
-export const deletePromoBanner = async (req, res) => {
+export const deletePromoBanner = async (req, res, next) => {
     try {
         const { id } = req.params;
         const banner = await PromoBanner.findById(id);
@@ -97,6 +102,6 @@ export const deletePromoBanner = async (req, res) => {
 
         res.status(200).json({ message: "Banner deleted" });
     } catch (error) {
-        res.status(500).json({ message: "Server error", error: error.message });
+        next(error)
     }
 };

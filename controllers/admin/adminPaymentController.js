@@ -113,19 +113,31 @@ export const getNewPaymentsCount = async (req, res, next) => {
 
 export const markOrderPaid = async (req, res, next) => {
     try {
-        const order = await Order.findById(req.params.id);
-        if (!order) return res.status(404).json({ message: "Order not found" });
+        const existingOrder = await Order.findById(req.params.id).select("paymentStatus paymentMethod");
+        if (!existingOrder) return res.status(404).json({ message: "Order not found" });
 
-        if (!["failed", "expired"].includes(order.paymentStatus)) {
+        if (!["failed", "expired"].includes(existingOrder.paymentStatus)) {
             return res.status(400).json({ message: "Only failed/expired orders can be marked paid" });
         }
 
-        order.paymentStatus = "paid";
-        order.paymentMethod = order.paymentMethod || "manual";
-        order.markedPaidBy = req.user._id;
-        order.markedPaidAt = new Date();
-        order.manualPaymentNote = req.body.note || "";
-        await order.save();
+        // ── atomic
+        const order = await Order.findOneAndUpdate(
+            { _id: req.params.id, paymentStatus: { $in: ["failed", "expired"] } },
+            {
+                $set: {
+                    paymentStatus: "paid",
+                    paymentMethod: existingOrder.paymentMethod || "manual",
+                    markedPaidBy: req.user._id,
+                    markedPaidAt: new Date(),
+                    manualPaymentNote: req.body.note || "",
+                },
+            },
+            { new: true }
+        );
+
+        if (!order) {
+            return res.status(409).json({ message: "Order status changed concurrently, please retry" });
+        }
 
         return res.status(200).json({ success: true, message: "Order marked as paid", order });
     } catch (err) {

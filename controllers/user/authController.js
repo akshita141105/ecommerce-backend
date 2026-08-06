@@ -73,14 +73,13 @@ export const verifyotp = async (req, res) => {
         if (user.otpExpires < new Date()) {
             return res.status(400).json({ message: "Otp expired" });
         }
-        user.isVerified = true;
-        user.otp = undefined;
-        user.otpExpires = undefined;
-
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
-        user.refreshToken = hashToken(refreshToken);
-        await user.save();
+
+        await User.findByIdAndUpdate(user._id, {
+            $set: { isVerified: true, refreshToken: hashToken(refreshToken) },
+            $unset: { otp: "", otpExpires: "" },
+        });
 
         res.cookie("accessToken", accessToken, {
             ...cookieOptions, maxAge: 15 * 60 * 1000,
@@ -129,8 +128,10 @@ export const login = async (req, res) => {
 
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user);
-        user.refreshToken = hashToken(refreshToken);
-        await user.save();
+
+        await User.findByIdAndUpdate(user._id, {
+            $set: { refreshToken: hashToken(refreshToken) },
+        });
 
         res.cookie("accessToken", accessToken, {
             ...cookieOptions, maxAge: 15 * 60 * 1000,
@@ -197,14 +198,18 @@ export const resendOtp = async (req, res) => {
             return res.status(429).json({ message: "OTP limiting reached today . Try tomorrow" });
         }
 
-        user.otpRequestCount += 1;
-        user.lastOtpSentAt = now;
-
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
-        user.otp = otp;
-        user.otpExpires = otpExpires;
-        await user.save();
+
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                otpRequestCount: user.otpRequestCount + 1,
+                lastOtpSentAt: now,
+                otp,
+                otpExpires,
+                otpRequestResetTime: user.otpRequestResetTime,
+            },
+        });
         await sendEmail(
             email,
             "Your otp for MyStore Signup",
@@ -237,17 +242,22 @@ export const forgotPassword = async (req, res) => {
             return res.status(429).json({ message: "Reset request limit reached. Try later." });
         }
 
-        user.resetRequestCount += 1;
-
-        checkResetRisk(user).catch(() => { });   
-
         const resetToken = crypto.randomBytes(32).toString("hex");
         const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
         const resetTokenExpires = Date.now() + 15 * 60 * 1000;
-        user.resetToken = hashedToken;
-        user.resetTokenExpires = resetTokenExpires;
-        await user.save();
-        const resetUrl = `http://localhost:3000/reset-password/${resetToken}`;
+
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                resetRequestCount: user.resetRequestCount + 1,
+                resetRequestResetTime: user.resetRequestResetTime,
+                resetToken: hashedToken,
+                resetTokenExpires,
+            },
+        });
+
+        checkResetRisk(user).catch(() => { });
+
+        const resetUrl = `https://ecommerce-frontend-snowy-iota.vercel.app/reset-password/${resetToken}`;
         await sendEmail(email,
             "Password Reset Request",
             `<p>Click the link to reset your password : </p>
@@ -276,13 +286,12 @@ export const resetPassword = async (req, res) => {
             return res.status(400).json({ message: "Invalid or expired reset token!" });
         }
         const hashed = await bcrypt.hash(password, 10);
-        user.password = hashed;
-        user.resetToken = undefined;
-        user.resetTokenExpires = undefined;
-        user.resetRequestCount = undefined;
-        user.resetRequestResetTime = undefined;
 
-        await user.save();
+        await User.findByIdAndUpdate(user._id, {
+            $set: { password: hashed },
+            $unset: { resetToken: "", resetTokenExpires: "", resetRequestCount: "", resetRequestResetTime: "" },
+        });
+
         return res.status(200).json({ message: "Password reset successfully!" });
     } catch (err) {
         return res.status(500).json({ message: err.message });
@@ -314,8 +323,7 @@ export const refreshAccessToken = async (req, res) => {
         }
 
         if (user.isBlocked) {
-            user.refreshToken = null;
-            await user.save();
+            await User.findByIdAndUpdate(user._id, { $set: { refreshToken: null } });
             res.clearCookie("accessToken");
             res.clearCookie("refreshToken");
             return res.status(403).json({

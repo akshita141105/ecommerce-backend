@@ -47,15 +47,17 @@ export const markCartAsOrdered = async (req, res, next) => {
   try {
     const { cartId } = req.params;
 
-    const cart = await Cart.findOne({ _id: cartId, user: req.user._id });
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
+    const cart = await Cart.findOneAndUpdate(
+      { _id: cartId, user: req.user._id, status: { $ne: "ordered" } },
+      { $set: { status: "ordered" } },
+      { new: true }
+    );
 
-    if (cart.status === "ordered") {
+    if (!cart) {
+      const check = await Cart.findOne({ _id: cartId, user: req.user._id }).lean();
+      if (!check) return res.status(404).json({ message: "Cart not found" });
       return res.status(400).json({ message: "Cart already ordered" });
     }
-
-    cart.status = "ordered";
-    await cart.save();
 
     logger.info(`Cart marked as ordered: ${cartId}`);
     return res.status(200).json({ message: "Cart marked as ordered" });
@@ -115,10 +117,13 @@ export const addToCart = async (req, res, next) => {
 
     // ── Persist cart item ──
     if (existing) {
-      existing.quantity += quantity;
-      await existing.save();
+      const updatedItem = await CartItem.findByIdAndUpdate(
+        existing._id,
+        { $inc: { quantity } },
+        { new: true }
+      );
       logger.info(`Cart item quantity merged: ${productId} | Cart: ${cart._id}`);
-      return res.status(200).json({ message: "Quantity updated in cart", cartItem: existing });
+      return res.status(200).json({ message: "Quantity updated in cart", cartItem: updatedItem });
     }
 
     const cartItem = await CartItem.create({
@@ -256,8 +261,7 @@ export const updateCartItem = async (req, res, next) => {
       await releaseStock({ ...inventoryParams, quantity: Math.abs(delta) });
     }
 
-    cartItem.quantity = quantity;
-    await cartItem.save();
+    await CartItem.findByIdAndUpdate(cartItemId, { $set: { quantity } });
 
     logger.info(`Cart item updated: ${cartItemId} | ${oldQty} → ${quantity}`);
     return res.status(200).json({ message: "Quantity updated", cartItem });

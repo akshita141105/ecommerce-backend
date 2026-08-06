@@ -1,11 +1,3 @@
-// controllers/admin/adminfaqController.js
-// Path assumption: controllers/admin/adminfaqController.js -> models/Faq.js is ../../models/Faq.js
-//
-// Bulk upload accepts CSV (headers: question,answer,topic) or Excel (.xlsx/.xls)
-// with the same headers in row 1.
-// (install "csv-parse" and "xlsx" — `npm install csv-parse xlsx`)
-// Actual queueing/processing lives in services/faqBulkUpload.js (BullMQ + Redis).
-
 import fs from "fs/promises";
 import path from "path";
 import { parse } from "csv-parse/sync";

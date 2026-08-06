@@ -84,25 +84,29 @@ export const updateCategory = async (req, res, next) => {
     }
 
     if (newImageUrl) {
-      const old = await Category.findOne({ slug: categorySlug }).lean();
-      if (old?.image) {
-        const publicId = getPublicId(old.image);
-        if (publicId) {
-          await cloudinary.uploader.destroy(publicId).catch((e) =>
-            logger.warn(`Failed to delete old image: ${e.message}`)
-          );
-        }
-      }
       updateData.image = newImageUrl;
     }
 
-    const category = await Category.findOneAndUpdate(
+    // ── new: false → yeh update se PEHLE wala (purana) document return karega ──
+    const oldCategory = await Category.findOneAndUpdate(
       { slug: categorySlug },
       updateData,
-      { new: true }
+      { new: false }
     );
 
-    if (!category) return res.status(404).json({ message: "Category not found" });
+    if (!oldCategory) return res.status(404).json({ message: "Category not found" });
+
+    // ── ab purani image (agar nayi image aayi thi) safely delete karo ──
+    if (newImageUrl && oldCategory.image) {
+      const publicId = getPublicId(oldCategory.image);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId).catch((e) =>
+          logger.warn(`Failed to delete old image: ${e.message}`)
+        );
+      }
+    }
+
+    const category = await Category.findOne({ slug: newSlug });
 
     await clearCategoryCache(categorySlug);
     if (newSlug !== categorySlug) await clearCategoryCache(newSlug);

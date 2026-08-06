@@ -451,14 +451,20 @@ export const deleteproduct = async (req, res, next) => {
 export const toggleVideoVisibility = async (req, res, next) => {
   try {
     const { productId } = req.params;
-    const product = await Product.findById(productId);
-
-    if (!product) {
+    const existing = await Product.findById(productId).select("videoVisible").lean();
+    if (!existing) {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    product.videoVisible = !product.videoVisible;
-    await product.save();
+    const product = await Product.findOneAndUpdate(
+      { _id: productId, videoVisible: existing.videoVisible },
+      { $set: { videoVisible: !existing.videoVisible } },
+      { new: true }
+    );
+
+    if (!product) {
+      return res.status(409).json({ message: "Video visibility changed concurrently, please retry" });
+    }
 
     await clearProductCache(); 
 

@@ -72,43 +72,30 @@ const userSchema = new mongoose.Schema({
 
     addresses: [addressSchema],
 
-    wishlist: [
-        {
-            productId: {
-                type: mongoose.Schema.Types.ObjectId,
-                ref: "Product"
-            },
-            color: {
-                type: String,
-                required: true
-            }
-        }
-    ],
+    // ❌ wishlist yahan se hata diya — ab WishlistItem collection mein hai
 
     createdAt: {
         type: Date,
         default: Date.now
     },
 
-    walletBalance : {
+    walletBalance: {
         type: Number,
-        default : 0,
-        min : 0,
+        default: 0,
+        min: 0,
     },
 
     refreshToken: {
         type: String,
         default: null,
-        select: false   // normal find/findOne queries mein return nahi hoga, security ke liye
+        select: false
     },
 
     walletReserved: { type: Number, default: 0 },
 });
 
-// Schema ke baad add karo
-userSchema.index({ role: 1 });           // admin queries ke liye
-userSchema.index({ isVerified: 1 });     // unverified users filter ke liye
-userSchema.index({ otpExpires: 1 });     // expired OTP cleanup ke liye
-// email unique hai toh auto-indexed hai ✅
+userSchema.index({ role: 1 });
+userSchema.index({ isVerified: 1 });
+userSchema.index({ otpExpires: 1 });
 
 export default mongoose.model('User', userSchema);

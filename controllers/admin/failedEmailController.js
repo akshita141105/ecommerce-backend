@@ -36,17 +36,29 @@ export const getFailedEmails = async (req, res, next) => {
 export const resendFailedEmail = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const failedEmail = await FailedEmail.findById(id);
+
+        // ── Atomic claim: sirf tabhi "resent" pe set karega jab abhi resent nahi hua ──
+        // Isse email do baar bhejne se bachta hai agar do admin same time pe click karein
+        const failedEmail = await FailedEmail.findOneAndUpdate(
+            { _id: id, status: { $ne: "resent" } },
+            { $set: { status: "resent", resentAt: new Date() } },
+            { new: true }
+        );
 
         if (!failedEmail) {
-            return res.status(404).json({ message: "Failed email not found" });
+            const check = await FailedEmail.findById(id).lean();
+            if (!check) return res.status(404).json({ message: "Failed email not found" });
+            return res.status(400).json({ message: "Email already resent" });
         }
 
-        await sendEmail(failedEmail.to, failedEmail.subject, failedEmail.html);
-
-        failedEmail.status = "resent";
-        failedEmail.resentAt = new Date();
-        await failedEmail.save();
+        // ── ab actual send karo — status pehle hi lock ho chuka hai ──
+        try {
+            await sendEmail(failedEmail.to, failedEmail.subject, failedEmail.html);
+        } catch (sendErr) {
+            // send fail hua toh status wapas revert karo taaki dobara try ho sake
+            await FailedEmail.findByIdAndUpdate(id, { $set: { status: "failed" } });
+            throw sendErr;
+        }
 
         res.status(200).json({ message: "Email re-queued successfully" });
     } catch (err) {

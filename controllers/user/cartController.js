@@ -30,15 +30,17 @@ export const markCartAsOrdered = async (req, res, next) => {
   try {
     const { cartId } = req.params;
 
-    const cart = await Cart.findOne({ _id: cartId, user: req.user._id });
-    if (!cart) return res.status(404).json({ message: "Cart not found" });
+    const cart = await Cart.findOneAndUpdate(
+      { _id: cartId, user: req.user._id, status: { $ne: "ordered" } },
+      { $set: { status: "ordered" } },
+      { new: true }
+    );
 
-    if (cart.status === "ordered") {
+    if (!cart) {
+      const check = await Cart.findOne({ _id: cartId, user: req.user._id }).lean();
+      if (!check) return res.status(404).json({ message: "Cart not found" });
       return res.status(400).json({ message: "Cart already ordered" });
     }
-
-    cart.status = "ordered";
-    await cart.save();
 
     logger.info(`Cart marked as ordered: ${cartId}`);
     return res.status(200).json({ message: "Cart marked as ordered" });

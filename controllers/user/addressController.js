@@ -15,31 +15,31 @@ export const createAddress = async (req, res, next) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found!" });
+    const existing = await User.findById(userId).select("addresses").lean();
+    if (!existing) return res.status(404).json({ message: "User not found!" });
 
     let defaultStatus = isDefault || false;
+    if (existing.addresses.length === 0) defaultStatus = true;
 
-    // First address automatically default
-    if (user.addresses.length === 0) defaultStatus = true;
-
-    // If new address is default → remove default from others
+    // ── Agar naya address default banna hai, pehle sab existing ko false karo ──
     if (defaultStatus) {
-      user.addresses.forEach(addr => (addr.isDefault = false));
+      await User.updateOne(
+        { _id: userId },
+        { $set: { "addresses.$[].isDefault": false } }
+      );
     }
 
-    user.addresses.push({
-      fullName,
-      phone,
-      pincode,
-      state,
-      city,
-      addressData,
-      landmark,
-      isDefault: defaultStatus
-    });
+    // ── Ab naya address atomically push karo ──
+    const user = await User.findByIdAndUpdate(
+      userId,
+      {
+        $push: {
+          addresses: { fullName, phone, pincode, state, city, addressData, landmark, isDefault: defaultStatus },
+        },
+      },
+      { new: true }
+    );
 
-    await user.save();
     logger.info(`Address created for user: ${userId}`);
 
     return res.status(200).json({
@@ -96,20 +96,32 @@ export const updateAddress = async (req, res, next) => {
     const { addressId } = req.params;
     const updates = req.body;
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found!" });
+    const existing = await User.findById(req.user._id).select("addresses").lean();
+    if (!existing) return res.status(404).json({ message: "User not found!" });
 
-    const address = user.addresses.id(addressId);
-    if (!address) return res.status(404).json({ message: "Address not found!" });
+    const addressExists = existing.addresses.some((a) => a._id.toString() === addressId);
+    if (!addressExists) return res.status(404).json({ message: "Address not found!" });
 
-    // If making this address default → remove default from others
+    // ── Agar isko default banana hai, pehle sab ko false karo ──
     if (updates.isDefault) {
-      user.addresses.forEach(addr => (addr.isDefault = false));
+      await User.updateOne(
+        { _id: req.user._id },
+        { $set: { "addresses.$[].isDefault": false } }
+      );
     }
 
-    Object.assign(address, updates);
+    // ── Ab specific address ke fields update karo (positional operator se) ──
+    const setFields = {};
+    Object.keys(updates).forEach((key) => {
+      setFields[`addresses.$.${key}`] = updates[key];
+    });
 
-    await user.save();  // 🔥 THIS WAS MISSING IN YOUR CODE
+    const user = await User.findOneAndUpdate(
+      { _id: req.user._id, "addresses._id": addressId },
+      { $set: setFields },
+      { new: true }
+    );
+    
     logger.info(`Address updated: ${addressId} by user: ${req.user._id}`);
 
     return res.status(200).json({
@@ -128,22 +140,30 @@ export const deleteAddress = async (req, res, next) => {
   try {
     const { addressId } = req.params;
 
-    const user = await User.findById(req.user._id);
-    if (!user) return res.status(404).json({ message: "User not found!" });
+    const existing = await User.findById(req.user._id).select("addresses").lean();
+    if (!existing) return res.status(404).json({ message: "User not found!" });
 
-    const address = user.addresses.id(addressId);
+    const address = existing.addresses.find((a) => a._id.toString() === addressId);
     if (!address) return res.status(404).json({ message: "Address not found!" });
 
     const wasDefault = address.isDefault;
 
-    address.deleteOne();  // cleaner than filter
+    // ── Address atomically pull karo ──
+    let user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $pull: { addresses: { _id: addressId } } },
+      { new: true }
+    );
 
-    // If default deleted → make first remaining default
+    // ── Agar deleted wala default tha, pehla remaining address default banao ──
     if (wasDefault && user.addresses.length > 0) {
-      user.addresses[0].isDefault = true;
+      user = await User.findOneAndUpdate(
+        { _id: req.user._id },
+        { $set: { "addresses.0.isDefault": true } },
+        { new: true }
+      );
     }
-
-    await user.save();
+    
     logger.info(`Address deleted: ${addressId} by user: ${req.user._id}`);
 
     return res.status(200).json({

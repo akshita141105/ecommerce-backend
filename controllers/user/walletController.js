@@ -27,11 +27,12 @@ export const getWallet = async (req, res, next) => {
 
 // 🔧 INTERNAL HELPER — used for return/refund credits only
 export const creditWallet = async (userId, amount, reason, description, orderId = null, returnId = null, session = null) => {
-    const user = await User.findById(userId).session(session);
+    const user = await User.findByIdAndUpdate(
+        userId,
+        { $inc: { walletBalance: amount } },
+        { session, new: true }
+    );
     if (!user) throw new Error("User not found");
-
-    user.walletBalance = (user.walletBalance || 0) + amount;
-    await user.save({ session });
 
     await WalletTransaction.create(
         [{

@@ -247,16 +247,28 @@ export const toggleBlockCustomer = async (req, res, next) => {
             return res.status(400).json({ message: "Invalid customer id" });
         }
 
-        const user = await User.findOne({ _id: id, role: "user" });
-        if (!user) {
+        const existing = await User.findOne({ _id: id, role: "user" }).select("isBlocked").lean();
+        if (!existing) {
             return res.status(404).json({ message: "Customer not found" });
         }
 
-        user.isBlocked = !user.isBlocked;
-        user.blockedReason = user.isBlocked ? (reason || "Blocked by admin") : null;
-        user.blockedAt = user.isBlocked ? new Date() : null;
+        const willBlock = !existing.isBlocked;
 
-        await user.save();
+        const user = await User.findOneAndUpdate(
+            { _id: id, role: "user", isBlocked: existing.isBlocked }, 
+            {
+                $set: {
+                    isBlocked: willBlock,
+                    blockedReason: willBlock ? (reason || "Blocked by admin") : null,
+                    blockedAt: willBlock ? new Date() : null,
+                },
+            },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.status(409).json({ message: "Customer status changed concurrently, please retry" });
+        }
 
         res.status(200).json({
             message: `Customer ${user.isBlocked ? "blocked" : "unblocked"} successfully`,

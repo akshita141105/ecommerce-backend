@@ -108,7 +108,7 @@ const returnRequestSchema = new mongoose.Schema(
 
 // user: 1 aur status: 1 already inline hain ✅
 // Yeh add karo
-returnRequestSchema.index({ order: 1 });              // order se return check ke liye
 returnRequestSchema.index({ status: 1, createdAt: -1 }); // admin panel sorted list ke liye
+returnRequestSchema.index({ order: 1, user: 1 }, { unique: true });
 
 export default mongoose.model("ReturnRequest", returnRequestSchema);

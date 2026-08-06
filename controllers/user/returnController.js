@@ -18,7 +18,6 @@ export const createReturnRequest = async (req, res, next) => {
 
     const order = await Order.findOne({ _id: orderId, user: userId });
 
-    // ✅ FIX: Errors.orderNotFound() ki jagah simple response
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
@@ -63,26 +62,34 @@ export const createReturnRequest = async (req, res, next) => {
       }
     }
 
-    const returnReq = await ReturnRequest.create({
-      user: userId,
-      order: orderId,
-      items: order.items,
-      reason,
-      description: description || "",
-      refundAmount: order.subtotal,   // ✅ sirf product price, shipping exclude
-      refundMethod,
-      bankDetails: bankDetails || {},
-    });
+    // ── Atomic create — DB-level unique index (order+user) duplicate ko reject karega ──
+    let returnReq;
+    try {
+      returnReq = await ReturnRequest.create({
+        user: userId,
+        order: orderId,
+        items: order.items,
+        reason,
+        description: description || "",
+        refundAmount: order.subtotal,
+        refundMethod,
+        bankDetails: bankDetails || {},
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        return res.status(400).json({ message: "Return request already exists for this order" });
+      }
+      throw err;
+    }
 
     logger.info(`Return requested: ${returnReq._id} | Order: ${orderId} | Method: ${refundMethod}`);
 
-    // ✅ Admin ko notify karo — return create hone ke baad
     await notifyAdmin({
       type: "RETURN_REQUESTED",
       severity: "high",
       title: `Return requested for order #${order._id.toString().slice(-6)}`,
       message: `Reason: ${reason} · ₹${order.subtotal} · ${refundMethod}`,
-      link: `/returns?id=${returnReq._id}`, // ← "/returns" ki jagah query param se deep-link
+      link: `/returns?id=${returnReq._id}`,
       data: {
         returnId: returnReq._id,
         orderId: order._id,

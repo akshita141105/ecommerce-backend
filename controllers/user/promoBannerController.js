@@ -6,10 +6,6 @@ import PromoBanner from "../../models/PromoBanner.js";
 export const getActivePromoBanner = async (req, res, next) => {
     try {
         const now = new Date();
-        console.log("NOW:", now); // ← temp debug
-
-        const allBanners = await PromoBanner.find({}); // ← temp debug — sab dikhao
-        console.log("ALL BANNERS:", JSON.stringify(allBanners, null, 2));
 
         const banner = await PromoBanner.findOne({
             isActive: true,

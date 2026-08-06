@@ -21,17 +21,23 @@ export const approveReturn = async (req, res, next) => {
   try {
     const adminId = req.user._id;
 
+    // ── Atomic claim: sirf tabhi "pending" se "approved" pe set karega jab abhi bhi pending hai ──
+    // Isse double-approval / double-refund race permanently khatam ho jaata hai
+    const claimed = await ReturnRequest.findOneAndUpdate(
+      { _id: req.params.returnId, status: "pending" },
+      { $set: { status: "approving" } },  
+      { session, new: true }
+    );
+
+    if (!claimed) {
+      const check = await ReturnRequest.findById(req.params.returnId).session(session).lean();
+      if (!check) return res.status(404).json({ message: "Return request not found" });
+      return res.status(400).json({ message: `Return already ${check.status}` });
+    }
+
     const returnReq = await ReturnRequest.findById(req.params.returnId)
       .populate("order")
       .session(session);
-
-    if (!returnReq) {
-      return res.status(404).json({ message: "Return request not found" });
-    }
-
-    if (returnReq.status !== "pending") {
-      return res.status(400).json({ message: `Return already ${returnReq.status}` });
-    }
 
     const { refundMethod, refundAmount, user: userId, order } = returnReq;
 
@@ -231,20 +237,24 @@ export const rejectReturn = async (req, res, next) => {
       return res.status(400).json({ message: "Rejection reason is required" });
     }
 
-    const returnReq = await ReturnRequest.findById(req.params.returnId);
+    const returnReq = await ReturnRequest.findOneAndUpdate(
+      { _id: req.params.returnId, status: "pending" },
+      {
+        $set: {
+          status: "rejected",
+          rejectionReason,
+          processedAt: new Date(),
+          processedBy: req.user._id,
+        },
+      },
+      { new: true }
+    );
+
     if (!returnReq) {
-      return res.status(404).json({ message: "Return request not found" });
+      const check = await ReturnRequest.findById(req.params.returnId).lean();
+      if (!check) return res.status(404).json({ message: "Return request not found" });
+      return res.status(400).json({ message: `Return already ${check.status}` });
     }
-
-    if (returnReq.status !== "pending") {
-      return res.status(400).json({ message: `Return already ${returnReq.status}` });
-    }
-
-    returnReq.status = "rejected";
-    returnReq.rejectionReason = rejectionReason;
-    returnReq.processedAt = new Date();
-    returnReq.processedBy = req.user._id;
-    await returnReq.save();
 
     logger.info(`Return rejected: ${returnReq._id} | Reason: ${rejectionReason}`);
 

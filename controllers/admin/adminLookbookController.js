@@ -71,21 +71,19 @@ export const addProductToSection = async (req, res, next) => {
     const { sectionId } = req.params;
     const { productId } = req.body;
 
-    const lookbook = await Lookbook.findOne();
-    if (!lookbook) return res.status(404).json({ message: "Lookbook not found" });
+    const lookbook = await Lookbook.findOneAndUpdate(
+      { "sections._id": sectionId },
+      { $addToSet: { "sections.$.products": productId } },
+      { new: true }
+    );
 
-    const section = lookbook.sections.id(sectionId);
-    if (!section) return res.status(404).json({ message: "Section not found" });
-
-    // Already exists check
-    if (section.products.map(String).includes(String(productId))) {
-      return res.status(400).json({ message: "Product already in this section" });
+    if (!lookbook) {
+      return res.status(404).json({ message: "Lookbook or section not found" });
     }
 
-    section.products.push(productId);
-    await lookbook.save();
-    await clearCache();
+    const section = lookbook.sections.id(sectionId);
 
+    await clearCache();
     res.json({ success: true, section });
   } catch (err) {
     next(err);
@@ -98,19 +96,19 @@ export const removeProductFromSection = async (req, res, next) => {
   try {
     const { sectionId, productId } = req.params;
 
-    const lookbook = await Lookbook.findOne();
-    if (!lookbook) return res.status(404).json({ message: "Lookbook not found" });
-
-    const section = lookbook.sections.id(sectionId);
-    if (!section) return res.status(404).json({ message: "Section not found" });
-
-    section.products = section.products.filter(
-      (p) => p.toString() !== productId
+    const lookbook = await Lookbook.findOneAndUpdate(
+      { "sections._id": sectionId },
+      { $pull: { "sections.$.products": productId } },
+      { new: true }
     );
 
-    await lookbook.save();
-    await clearCache();
+    if (!lookbook) {
+      return res.status(404).json({ message: "Lookbook or section not found" });
+    }
 
+    const section = lookbook.sections.id(sectionId);
+
+    await clearCache();
     res.json({ success: true, section });
   } catch (err) {
     next(err);
@@ -172,18 +170,23 @@ export const updateSection = async (req, res, next) => {
     const { sectionId } = req.params;
     const { title, slug } = req.body;
 
-    const lookbook = await Lookbook.findOne();
-    if (!lookbook) return res.status(404).json({ message: "Lookbook not found" });
+    const setFields = {};
+    if (title) setFields["sections.$.title"] = title;
+    if (slug) setFields["sections.$.slug"] = slug;
+
+    const lookbook = await Lookbook.findOneAndUpdate(
+      { "sections._id": sectionId },
+      { $set: setFields },
+      { new: true }
+    );
+
+    if (!lookbook) {
+      return res.status(404).json({ message: "Lookbook or section not found" });
+    }
 
     const section = lookbook.sections.id(sectionId);
-    if (!section) return res.status(404).json({ message: "Section not found" });
 
-    if (title) section.title = title;
-    if (slug) section.slug = slug;
-
-    await lookbook.save();
     await clearCache();
-
     res.json({ success: true, section });
   } catch (err) {
     next(err);
