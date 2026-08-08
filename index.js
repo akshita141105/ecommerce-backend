@@ -184,7 +184,7 @@ Sentry.setupExpressErrorHandler(app);
 app.use(globalErrorHandler);
 
 // ─── Cron Jobs ────────────────────────────────
-cron.schedule("*/1 * * * *", async () => {
+cron.schedule("*/5 * * * *", async () => {
     try {
         await releaseExpiredCartStock();
     } catch (err) {

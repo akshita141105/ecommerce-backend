@@ -15,7 +15,7 @@ const cartSchema = new mongoose.Schema(
         },
         expiresAt: {
             type: Date,
-            default: () => new Date(Date.now() + 5 * 60 * 1000), // 30 min TTL
+            default: () => new Date(Date.now() + 30 * 60 * 1000), // 30 min TTL
         },
         deleteAfter: {
             type: Date,
@@ -44,7 +44,7 @@ cartSchema.index({ status: 1, processingStartedAt: 1 });
 
 // Extend TTL on cart activity
 cartSchema.methods.refreshExpiry = async function () {
-    this.expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    this.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
     await this.save();
 };
 
