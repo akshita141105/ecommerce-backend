@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// mongoose.set('debug', true);
+mongoose.set('debug', true);
 
 const connectmongodb = async () => {
     try {

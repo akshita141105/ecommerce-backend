@@ -66,7 +66,6 @@ export const emailWorker = new Worker(
                 throw new Error(data.message || `Brevo API failed with status ${response.status}`);
             }
 
-            console.log("✅ Brevo API SUCCESS:", data);
             logger.info(`Email sent: ${subject} → ${to}`);
         } catch (sendErr) {
             console.error("❌ Email send FAILED:", sendErr.message);
@@ -84,7 +83,6 @@ emailWorker.on("error", (err) => {
 });
 
 emailWorker.on("completed", (job) => {
-    console.log(`🎉 Email job completed: ${job.id}`);
     logger.info(`Email job completed: ${job.id}`);
 });
 

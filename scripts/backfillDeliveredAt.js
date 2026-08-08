@@ -9,7 +9,7 @@ const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 
 const run = async () => {
     if (!MONGO_URI) {
-            console.error("❌ MONGO_URI env variable nahi mila.");
+            console.error("❌ Cant find MONGO_URI");
             process.exit(1);
         }
     

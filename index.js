@@ -184,7 +184,7 @@ Sentry.setupExpressErrorHandler(app);
 app.use(globalErrorHandler);
 
 // ─── Cron Jobs ────────────────────────────────
-cron.schedule("*/5 * * * *", async () => {
+cron.schedule("*/1 * * * *", async () => {
     try {
         await releaseExpiredCartStock();
     } catch (err) {
@@ -203,7 +203,7 @@ cron.schedule("*/10 * * * *", () => {
     expireStalePendingOrders().catch((err) => logger.error("expireOrders job failed:", err));
 });
 
-logger.info("Cron: releaseExpiredCartStock registered (every 5 min)");
+logger.info("Cron: releaseExpiredCartStock registered (every 1 min)");
 registerStockMonitorCron();
 registerReconcilePendingCron();
 

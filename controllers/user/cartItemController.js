@@ -29,7 +29,7 @@ export const getOrCreateCart = async (req, res, next) => {
       console.log("🟢 NEW CART CREATED:", cart._id, "for user:", userId, "at", new Date());
       logger.info(`Cart created for user: ${userId}`);
     }
-    else{
+    else {
       console.log("🟢 EXISTING CART FOUND:", cart._id, "status:", cart.status, "expiresAt:", cart.expiresAt);
     }
 
@@ -79,6 +79,11 @@ export const addToCart = async (req, res, next) => {
     const userId = req.user._id;
     const { productId, selectedColor, selectedSize, quantity = 1 } = req.body;
 
+    console.log("\n════════════════════════════════════════════════");
+    console.log("🛒 [ADD TO CART] request received at:", new Date().toISOString());
+    console.log("🛒 [ADD TO CART] user:", userId.toString());
+    console.log("🛒 [ADD TO CART] product:", productId, "| color:", selectedColor, "| size:", selectedSize, "| qty:", quantity);
+
     if (!productId || !selectedColor || !selectedSize) {
       return res
         .status(400)
@@ -91,7 +96,22 @@ export const addToCart = async (req, res, next) => {
 
     // ── Get or create active cart ──
     let cart = await Cart.findOne({ user: userId, status: "active" });
-    if (!cart) cart = await Cart.create({ user: userId });
+    if (!cart) {
+      cart = await Cart.create({ user: userId });
+      console.log("🟢 [ADD TO CART] NEW cart created:", cart._id.toString());
+    } else {
+      console.log("🟢 [ADD TO CART] EXISTING cart reused:", cart._id.toString());
+    }
+
+    // ── Log exact expiry window so we can correlate with cron logs ──
+    const now = new Date();
+    const msUntilExpiry = new Date(cart.expiresAt).getTime() - now.getTime();
+    console.log("⏱️  [ADD TO CART] cart._id:", cart._id.toString());
+    console.log("⏱️  [ADD TO CART] cart.status:", cart.status);
+    console.log("⏱️  [ADD TO CART] cart.createdAt:", cart.createdAt?.toISOString?.() ?? cart.createdAt);
+    console.log("⏱️  [ADD TO CART] cart.expiresAt:", new Date(cart.expiresAt).toISOString());
+    console.log("⏱️  [ADD TO CART] current server time:", now.toISOString());
+    console.log("⏱️  [ADD TO CART] time left until expiry (sec):", Math.round(msUntilExpiry / 1000));
 
     // ── Already in cart? — calculate effective delta ──
     const existing = await CartItem.findOne({
@@ -104,7 +124,9 @@ export const addToCart = async (req, res, next) => {
     // reserveStock handles availability atomically (race-condition safe)
     try {
       await reserveStock({ productId, color: selectedColor, size: selectedSize, quantity });
+      console.log("🟢 [ADD TO CART] stock reserved successfully for product:", productId);
     } catch (err) {
+      console.log("🔴 [ADD TO CART] stock reservation FAILED:", err.message);
       const msgMap = {
         PRODUCT_NOT_FOUND: [404, "Product not found"],
         COLOR_NOT_FOUND: [400, "Selected color not available"],
@@ -122,6 +144,8 @@ export const addToCart = async (req, res, next) => {
         { $inc: { quantity } },
         { new: true }
       );
+      console.log("🟢 [ADD TO CART] existing item quantity merged:", updatedItem._id.toString(), "-> new qty:", updatedItem.quantity);
+      console.log("════════════════════════════════════════════════\n");
       logger.info(`Cart item quantity merged: ${productId} | Cart: ${cart._id}`);
       return res.status(200).json({ message: "Quantity updated in cart", cartItem: updatedItem });
     }
@@ -134,9 +158,14 @@ export const addToCart = async (req, res, next) => {
       selectedSize,
     });
 
+    console.log("🟢 [ADD TO CART] new CartItem created:", cartItem._id.toString(), "| linked to cart:", cart._id.toString());
+    console.log("🟢 [ADD TO CART] this item will be auto-released when cart expires at:", new Date(cart.expiresAt).toISOString());
+    console.log("════════════════════════════════════════════════\n");
+
     logger.info(`Cart item added: ${productId} | Cart: ${cart._id}`);
     return res.status(201).json({ message: "Item added to cart", cartItem });
   } catch (err) {
+    console.log("🔴 [ADD TO CART] unexpected error:", err.message);
     next(err);
   }
 };

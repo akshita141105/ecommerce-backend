@@ -1,19 +1,3 @@
-// scripts/reconcileOrphanedCartItems.js
-//
-// ONE-TIME BACKFILL SCRIPT
-// Finds CartItem documents whose parent Cart no longer exists
-// (the Cart was deleted somewhere without cleaning up its items or
-// releasing reserved stock). For each orphan found, this:
-//   1. Releases the reserved stock (reserved -qty, available +qty)
-//   2. Deletes the orphaned CartItem document
-//
-// USAGE:
-//   node scripts/reconcileOrphanedCartItems.js            → dry run (no writes)
-//   node scripts/reconcileOrphanedCartItems.js --apply     → actually fixes it
-//
-// Safe to re-run: once an orphan is fixed, its CartItem is deleted,
-// so a second run simply won't find it anymore.
-
 import dotenv from "dotenv";
 dotenv.config();
 
