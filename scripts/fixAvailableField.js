@@ -5,7 +5,7 @@ import Product from "../models/Product.js";
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGODB_URI;
 
 async function run() {
     if (!MONGO_URI) {

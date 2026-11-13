@@ -27,7 +27,7 @@ import logger from "../utils/logger.js";
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGODB_URI;
 
     if (!MONGO_URI) {
             console.error("❌ MONGO_URI env variable nahi mila.");
@@ -41,9 +41,9 @@ const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
 const normalizeQuestion = (question) => question.trim().toLowerCase();
 
 const run = async () => {
-    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+    const mongoUri = process.env.MONGODB_URI;
     if (!mongoUri) {
-        console.error("MONGO_URI (or MONGODB_URI) not set in environment. Aborting.");
+        console.error("MONGODB_URI not set in environment. Aborting.");
         process.exit(1);
     }
 

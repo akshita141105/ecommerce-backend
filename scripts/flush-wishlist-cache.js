@@ -1,5 +1,5 @@
 // flush-wishlist-cache.js
-import client from "../lib/redis.js";
+import client from "../config/redis.js";
 
 const run = async () => {
     const keys = await client.keys("wishlist:*");

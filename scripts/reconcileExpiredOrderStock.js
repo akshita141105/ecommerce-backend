@@ -18,7 +18,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import mongoose from "mongoose";
-import connectmongodb from "../db.js";
+import connectmongodb from "../config/db.js";
 import Order from "../models/Order.js";
 import { releaseStock } from "../services/inventoryService.js";
 import logger from "../utils/logger.js";

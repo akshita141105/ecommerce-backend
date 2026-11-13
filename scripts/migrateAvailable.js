@@ -1,6 +1,6 @@
 // scripts/migrateAvailable.js
 import Product from "../models/Product.js";
-import connectmongodb from "../db.js";
+import connectmongodb from "../config/db.js";
 import dotenv from "dotenv";
 
 dotenv.config();
